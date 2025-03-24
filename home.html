@@ -7,6 +7,17 @@
     <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vue-router@3/dist/vue-router.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- Include Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="admin.js"></script>
+    <script src="customer.js"></script>
+    <script src="professional.js"></script>
+    <script src="admin_customer.js"></script>
+    <script src="admin_professional.js"></script>
+    <script src="customer_booking.js"></script>
+    <script src="customer_my_bookings.js"></script>
+    <script src="professional_requests.js"></script>
+    <script src="professional_assignments.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 
     <style>
@@ -77,18 +88,188 @@
             font-size: 12px;
             color: gray;
         }
+        nav {
+    background-color: #a6c2ce;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 10px 0; /* Increased padding for taller navbar */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+  }
+
+  .nav-container {
+    display: flex;
+    width: 92%;
+    max-width: 1300px; /* Increased max-width */
+    margin: 0 auto;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .brand {
+    font-size: 35px; /* Increased font size */
+    font-weight: 600;
+    color: #062f64; /*3d5a80*/
+    text-decoration: none;
+    letter-spacing: 0.5px;
+    padding: 8px 15px; /* Increased padding */
+    border-radius: 4px;
+    transition: all 0.2s ease;
+  }
+
+  .brand:hover {
+    background-color: #f0f4f8;
+  }
+
+  .nav-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px; /* Increased gap */
+  }
+
+  .nav-btn {
+    padding: 10px 20px; /* Increased padding */
+    margin: 0 3px;
+    background-color: transparent;
+    color: #2a2222;
+    border: none;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 18px; /* Increased font size */
+    letter-spacing: 0.3px;
+    transition: all 0.2s ease;
+    position: relative;
+    cursor: pointer;
+  }
+
+  .nav-btn::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: #3d5a80;
+    transform: scaleX(0);
+    transition: transform 0.2s ease;
+  }
+
+  .nav-btn:hover {
+    color: #3d5a80;
+    background-color: #f8f9fa;
+  }
+
+  .nav-btn:hover::after {
+    transform: scaleX(0.8);
+  }
+
+  /* Active state styling */
+  .nav-btn.router-link-active {
+    color: #3d5a80;
+    font-weight: 500;
+    background-color: #f0f4f8;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+
+  .nav-btn.router-link-active::after {
+    transform: scaleX(1);
+    background-color: #3d5a80;
+  }
+
+  /* Logout button styling */
+  .logout-btn {
+    color: #d62828;
+  }
+
+  .logout-btn:hover {
+    color: #d62828;
+    background-color: #fff5f5;
+  }
+
+  .logout-btn::after {
+    background-color: #d62828;
+  }
+
+  .admin-nav-group {
+    display: flex;
+    gap: 8px; /* Increased gap */
+    flex-wrap: wrap;
+  }
+
+  /* For mobile responsiveness */
+  @media (max-width: 768px) {
+    .nav-container {
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .brand {
+      margin-bottom: 15px; /* Increased margin */
+    }
+
+    .nav-links {
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .nav-btn {
+      width: 100%;
+      text-align: center;
+      margin: 2px 0; /* Increased margin */
+    }
+
+    .admin-nav-group {
+      width: 100%;
+    }
+  }
+
+  /* Update body padding to accommodate larger navbar */
+  body {
+    padding-top: 90px; /* Increased to match larger navbar height */
+  }
+
     </style>
 </head>
 <body>
     <div id="app">
         <!-- Fixed Navigation Bar -->
+        <!-- Fixed Navigation Bar -->
         <nav>
-          <router-link to="/" class="btn btn-primary">Home</router-link>
-          <router-link to="/register-customer" class="btn btn-success" v-if="!isLoggedIn">Register as Customer</router-link>
-          <router-link to="/register-professional" class="btn btn-warning" v-if="!isLoggedIn">Register as Professional</router-link>
-          <router-link to="/login" class="btn btn-secondary" v-if="!isLoggedIn">Login</router-link>
-          <button @click="logout" class="btn btn-danger" v-if="isLoggedIn">Logout</button>
-      </nav>
+            <div class="nav-container">
+              <!-- Brand element visible to all users -->
+              <router-link to="/" class="brand">Ghar Seva</router-link>
+
+              <div class="nav-links">
+                <!-- Removed Home button -->
+
+                <!-- Buttons for non-logged-in users -->
+                <router-link to="/register-customer" class="nav-btn" v-if="!isLoggedIn">Register as Customer</router-link>
+                <router-link to="/register-professional" class="nav-btn" v-if="!isLoggedIn">Register as Professional</router-link>
+                <router-link to="/login" class="nav-btn" v-if="!isLoggedIn">Login</router-link>
+
+                <!-- Admin-specific buttons -->
+                <div v-if="isLoggedIn && userRole === 'ADMIN'" class="admin-nav-group">
+                  <router-link to="/admin-dashboard" class="nav-btn">Manage Services</router-link>
+                  <router-link to="/admin/manage-customers" class="nav-btn">Manage Customers</router-link>
+                  <router-link to="/admin/manage-professionals" class="nav-btn">Manage Professionals</router-link>
+                  <router-link to="/admin/manage-requests" class="nav-btn">Manage Requests</router-link>
+                </div>
+
+                <div v-if="isLoggedIn && userRole === 'CUSTOMER'" class="admin-nav-group">
+                    <router-link to="/customer/book-a-service" class="nav-btn">Book a Service</router-link>
+                    <router-link to="/customer/my-bookings" class="nav-btn">My Bookings</router-link>
+                </div>
+
+                <div v-if="isLoggedIn && userRole === 'PROFESSIONAL'" class="admin-nav-group">
+                    <router-link to="/professional/requests" class="nav-btn">Requests</router-link>
+                    <router-link to="/professional/assignments" class="nav-btn">To Be Attended</router-link>
+                </div>
+
+                <!-- Logout button for logged-in users -->
+                <button @click="logout" class="nav-btn logout-btn" v-if="isLoggedIn">Logout</button>
+              </div>
+            </div>
+          </nav>
 
 
 
@@ -105,7 +286,7 @@
                     <form @submit.prevent="login">
                         <div class="mb-3">
                             <label class="form-label">Email:</label>
-                            <input type="email" v-model="email" class="form-control" required>
+                            <input type="email" v-model="email" class="form-control" required autofocus>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Password:</label>
@@ -116,10 +297,7 @@
                             {{ isLoading ? 'Logging in...' : 'Login' }}
                         </button>
                         <div class="mt-3 text-center">
-                            <p>Don't have an account?
-                                <router-link to="/register-customer">Register as Customer</router-link> or
-                                <router-link to="/register-professional">Register as Professional</router-link>
-                            </p>
+
                         </div>
                     </form>
                 </div>
@@ -157,9 +335,11 @@
 
                         // Redirect based on user type if provided
                         if (response.data.userRole === 'PROFESSIONAL') {
-                            this.$router.push('/professional-dashboard');
+                            this.$router.push('/professional/requests');
                         } if (response.data.userRole === 'CUSTOMER') {
-                         this.$router.push('/customer-dashboard');
+                            this.$router.push('/customer/book-a-service');
+                        } if (response.data.userRole === 'ADMIN') {
+                            this.$router.push('/admin-dashboard');
                         }
                     })
                     .catch(error => {
@@ -183,7 +363,7 @@
                     <form @submit.prevent="registerCustomer">
                         <div class="mb-2">
                             <label class="form-label">Name:</label>
-                            <input type="text" v-model="name" class="form-control" required>
+                            <input type="text" v-model="name" class="form-control" required autofocus>
                         </div>
                         <div class="mb-2">
                             <label class="form-label">Email:</label>
@@ -223,7 +403,7 @@
                     <form @submit.prevent="registerProfessional">
                         <div class="mb-2">
                             <label class="form-label">Name:</label>
-                            <input type="text" v-model="name" class="form-control" required>
+                            <input type="text" v-model="name" class="form-control" required autofocus>
                         </div>
                         <div class="mb-2">
                             <label class="form-label">Email:</label>
@@ -272,8 +452,6 @@
         };
 
         // Define placeholder dashboard components (you can implement these later)
-        const CustomerDashboard = { template: '<h2 class="text-center">Customer Dashboard (To be implemented)</h2>' };
-        const ProfessionalDashboard = { template: '<h2 class="text-center">Professional Dashboard (To be implemented)</h2>' };
 
         const router = new VueRouter({
             routes: [
@@ -282,34 +460,94 @@
                 { path: '/register-customer', component: RegisterCustomer },
                 { path: '/register-professional', component: RegisterProfessional },
                 { path: '/customer-dashboard', component: CustomerDashboard },
-                { path: '/professional-dashboard', component: ProfessionalDashboard }
+                { path: '/admin-dashboard', component: AdminDashboard },
+                { path: '/admin/manage-customers', component: CustomerManagement },
+                { path: '/admin/manage-professionals', component: ProfessionalManagement },
+                { path: '/customer/book-a-service', component: BookService },
+                { path: '/customer/my-bookings', component: MyBookings },
+                { path: '/professional/requests', component: ProfessionalRequests },
+                { path: '/professional/assignments', component: ProfessionalAssignments }
             ]
         });
 
-        new Vue({
+        // Add this before creating the Vue instance
+router.beforeEach((to, from, next) => {
+    // Check if user is logged in
+    const isLoggedIn = !!localStorage.getItem('userId');
+    const userRole = localStorage.getItem('userRole') || '';
+
+    // Routes that require authentication
+    const authRequiredRoutes = [
+        '/customer-dashboard',
+        '/admin-dashboard',
+        '/admin/manage-customers',
+        '/admin/manage-professionals',
+        '/customer/book-a-service',
+        '/customer/my-bookings',
+        '/professional/requests',
+        '/professional/assignments'
+    ];
+
+    // Role-specific routes
+    const adminRoutes = ['/admin-dashboard', '/admin/manage-customers', '/admin/manage-professionals', '/admin/manage-requests'];
+    const customerRoutes = ['/customer-dashboard', '/customer/book-a-service', '/customer/my-bookings'];
+    const professionalRoutes = ['/professional/requests', '/professional/assignments'];
+
+    // Check if route requires authentication
+    if (authRequiredRoutes.includes(to.path)) {
+        if (!isLoggedIn) {
+            // Redirect to login if not logged in
+            return next('/login');
+        }
+
+        // Check role permissions
+        if (adminRoutes.includes(to.path) && userRole !== 'ADMIN') {
+            return next('/');
+        }
+        if (customerRoutes.includes(to.path) && userRole !== 'CUSTOMER') {
+            return next('/');
+        }
+        if (professionalRoutes.includes(to.path) && userRole !== 'PROFESSIONAL') {
+            return next('/');
+        }
+    }
+
+    next();
+});
+
+
+new Vue({
     el: "#app",
     router,
     data: {
-        isLoggedIn: !!localStorage.getItem('userId') // Check if user is logged in
+        isLoggedIn: false,
+        userRole: ''
     },
-    watch: {
-        '$route'() {
-            // Recalculate when route changes
-            this.isLoggedIn = !!localStorage.getItem('userId');
-        }
+    created() {
+        // Set initial auth state
+        this.checkAuthState();
+
+        // Set up login state check when router changes
+        this.$router.afterEach(() => {
+            this.checkAuthState();
+        });
     },
     methods: {
+        checkAuthState() {
+            this.isLoggedIn = !!localStorage.getItem('userId');
+            this.userRole = localStorage.getItem('userRole') || '';
+        },
         logout() {
             if (window.confirm("Are you sure you want to logout?")) {
-               localStorage.removeItem('userId');
-               localStorage.removeItem('userRole');
-               this.isLoggedIn = false;
-               this.$router.push('/');
+                localStorage.removeItem('userId');
+                localStorage.removeItem('userRole');
+                this.isLoggedIn = false;
+                this.userRole = '';
+                this.$router.push('/');
             }
         }
     }
 });
-
 
 
     </script>

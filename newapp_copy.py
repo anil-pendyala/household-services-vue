@@ -1,17 +1,20 @@
 from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
-from models import db, User, Customer, Role, Service, ServiceProfessional, ServiceRequest, Review, init_db
+from models import db, User, Customer, Role, Service, ServiceProfessional, ServiceRequest, init_db
+from flask_jwt_extended import JWTManager, create_access_token
 from datetime import datetime
 
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
 CORS(app)  # Allow frontend to communicate with backend
+# jwt = JWTManager(app)
 
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///household.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# app.config['JWT_SECRET_KEY'] = 'super-secret'
 
 # Initialize database
 init_db(app)
@@ -86,10 +89,71 @@ def register_professional():
 
 # Route to fetch all available services
 @app.route('/services', methods=['GET'])
-def get_all_services():
+def get_services():
     services = Service.query.all()
     service_list = [{"id": service.id, "name": service.name, "base_price": service.base_price, "time_required": service.time_required, "description": service.description} for service in services]
     return jsonify(service_list)
+
+# @app.route('/add-service', methods=['POST'])
+# def add_service():
+#     data = request.json
+#     service_name = data.get("name")
+#     base_price = data.get("base_price")
+#     time_required = data.get("time_required")
+#     description = data.get("description", "")
+
+#     if not service_name or base_price is None or time_required is None:
+#         return jsonify({"error": "Service name, base price, and time required are mandatory"}), 400
+
+#     # Add service to the database
+#     new_service = Service(
+#         name=service_name,
+#         base_price=base_price,
+#         time_required=time_required,
+#         description=description
+#     )
+#     db.session.add(new_service)
+#     db.session.commit()
+
+#     return jsonify({"message": "Service added successfully!"}), 201
+
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
+
+    if email == 'admin@abc.com' and password == 'admin':
+        return jsonify({"userId": -1, "userRole": 'ADMIN'}), 200
+
+    user = User.query.filter_by(email=email).first()
+
+    if user and bcrypt.check_password_hash(user.password_hash, password) and user.is_active:
+        return jsonify({"userId": user.id, "userRole": str(user.role.name)}), 200
+
+    elif user and bcrypt.check_password_hash(user.password_hash, password) and not user.is_active:
+        return jsonify({'error': 'Your account is blocked!'}), 401
+
+    else:
+        return jsonify({'error': 'Invalid email or password'}), 401
+
+
+
+
+@app.route('/services', methods=['GET'])
+def get_all_services():
+    services = Service.query.all()
+    return jsonify([{
+        'id': service.id,
+        'name': service.name,
+        'base_price': service.base_price,
+        'time_required': service.time_required,
+        'description': service.description
+    } for service in services])
 
 # Add a new service
 @app.route('/services', methods=['POST'])
@@ -158,6 +222,19 @@ def delete_service(service_id):
             return jsonify({
                 "error": "Cannot delete service as it is associated with professionals or service requests"
             }), 400
+        # Check if service is associated with any service professionals
+        # Make sure this matches your actual model relationships
+        if hasattr(service, 'professionals') and len(service.professionals) > 0:
+            return jsonify({
+                "error": "Cannot delete service as it is associated with professionals"
+            }), 400
+
+        # Check if service is associated with any service requests
+        # Make sure this matches your actual model relationships
+        if hasattr(service, 'service_requests') and len(service.service_requests) > 0:
+            return jsonify({
+                "error": "Cannot delete service as it is associated with service requests"
+            }), 400
 
         db.session.delete(service)
         db.session.commit()
@@ -165,6 +242,12 @@ def delete_service(service_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Failed to delete service: {str(e)}"}), 500
+
+
+
+
+
+# Add these routes to your app.py file
 
 @app.route('/customers', methods=['GET'])
 def get_all_customers():
@@ -239,6 +322,15 @@ def unblock_user(user_id):
         db.session.rollback()
         return jsonify({"error": f"Failed to unblock user: {str(e)}"}), 500
 
+
+
+
+
+
+
+
+# Add these routes to your app.py file
+
 @app.route('/professionals', methods=['GET'])
 def get_all_professionals():
     """
@@ -279,7 +371,7 @@ def get_all_professionals():
     return jsonify(professional_list)
 
 @app.route('/professionals/<int:professional_id>', methods=['GET'])
-def get_professional(professional_id):
+def get_professionals(professional_id):
     """
     Get detailed information about a specific service professional
     """
@@ -294,8 +386,7 @@ def get_professional(professional_id):
         ServiceProfessional.description,
         ServiceProfessional.is_verified,
         ServiceProfessional.profile_doc_url,
-        User.is_active,
-        ServiceProfessional.rating
+        User.is_active
     ).join(
         User, ServiceProfessional.id == User.id
     ).join(
@@ -318,8 +409,7 @@ def get_professional(professional_id):
         'description': professional.description,
         'is_verified': professional.is_verified,
         'profile_doc_url': professional.profile_doc_url,
-        'is_active': professional.is_active,
-        'rating': professional.rating
+        'is_active': professional.is_active
     }
 
     return jsonify(result)
@@ -345,6 +435,37 @@ def verify_professional(professional_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Failed to verify professional: {str(e)}"}), 500
+
+# The block/unblock routes can be reused from the customer management code
+# since they operate on the User table which is common to both customers and professionals
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @app.route('/service-requests', methods=['POST'])
 def create_service_request():
@@ -410,15 +531,15 @@ def update_service_request(request_id):
 
 @app.route('/service-requests/<int:request_id>/cancel', methods=['PUT'])
 def cancel_service_request(request_id):
-    request_obj = ServiceRequest.query.get(request_id)
+    request = ServiceRequest.query.get(request_id)
 
-    if not request_obj:
+    if not request:
         return jsonify({"error": "Service request not found"}), 404
 
-    if request_obj.service_status != 'REQUESTED':
+    if request.service_status != 'REQUESTED':
         return jsonify({"error": "Cannot cancel a request that is not in 'requested' status"}), 400
 
-    request_obj.service_status = 'CANCELLED'
+    request.service_status = 'CANCELLED'
 
     try:
         db.session.commit()
@@ -459,13 +580,8 @@ def get_customer_service_requests(customer_id):
             'professional_id': req.professional_id,
             'professional_name': professional_name,
             'date_of_completion': req.date_of_completion.isoformat() if req.date_of_completion else None,
-            'has_review': False  # Set this based on your model relationship
+            'has_review': req.review is not None
         }
-
-        # Check if the request has a review if your model includes this relationship
-        if hasattr(req, 'review') and req.review is not None:
-            request_data['has_review'] = True
-
         result.append(request_data)
 
     return jsonify(result)
@@ -486,6 +602,79 @@ def get_customer_info(customer_id):
 
     return jsonify(result)
 
+@app.route('/reviews', methods=['POST'])
+def create_review():
+    data = request.json
+
+    # Validate required fields
+    required_fields = ['service_request_id', 'customer_id', 'professional_id', 'rating']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"Missing required field: {field}"}), 400
+
+    # Check if a review already exists
+    existing_review = Review.query.filter_by(service_request_id=data['service_request_id']).first()
+    if existing_review:
+        return jsonify({"error": "A review already exists for this service request"}), 400
+
+    # Create new review
+    new_review = Review(
+        service_request_id=data['service_request_id'],
+        customer_id=data['customer_id'],
+        professional_id=data['professional_id'],
+        rating=data['rating'],
+        review_text=data.get('review_text', '')
+    )
+
+    db.session.add(new_review)
+
+    # Update professional's average rating
+    professional = ServiceProfessional.query.get(data['professional_id'])
+    if professional:
+        # Calculate new average rating
+        reviews = Review.query.filter_by(professional_id=professional.id).all()
+        total_rating = sum(review.rating for review in reviews) + new_review.rating
+        professional.rating = total_rating / (len(reviews) + 1)
+
+    try:
+        db.session.commit()
+        return jsonify({"message": "Review submitted successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to submit review: {str(e)}"}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/professionals/<int:professional_id>', methods=['GET'])
+def get_professional(professional_id):
+    professional = ServiceProfessional.query.get_or_404(professional_id)
+    return jsonify({
+        'id': professional.id,
+        'name': professional.name,
+        'service_id': professional.service_id,
+        'service_name': professional.service.name,
+        'experience': professional.experience,
+        'description': professional.description,
+        'is_verified': professional.is_verified,
+        'rating': professional.rating
+    })
+
 @app.route('/professionals/<int:professional_id>/assignments', methods=['GET'])
 def get_professional_assignments(professional_id):
     # Ensure professional exists
@@ -501,7 +690,7 @@ def get_professional_assignments(professional_id):
 
         # Get review if service is completed
         review_data = None
-        if assignment.service_status == 'CLOSED' and hasattr(assignment, 'review') and assignment.review:
+        if assignment.service_status == 'CLOSED' and assignment.review:
             review_data = {
                 'rating': assignment.review.rating,
                 'review_text': assignment.review.review_text
@@ -510,7 +699,7 @@ def get_professional_assignments(professional_id):
         result.append({
             'id': assignment.id,
             'service_id': assignment.service_id,
-            'service_name': Service.query.get(assignment.service_id).name,
+            'service_name': assignment.service.name,
             'customer_id': assignment.customer_id,
             'customer_name': customer.name,
             'date_of_assignment': assignment.date_of_request.isoformat(),
@@ -535,7 +724,7 @@ def get_available_requests(professional_id):
     available_requests = ServiceRequest.query.join(Service).filter(
         ServiceRequest.service_id == professional.service_id,
         ServiceRequest.service_status == 'REQUESTED',
-        ServiceRequest.professional_id.is_(None)  # Not yet assigned to any professional
+        ServiceRequest.professional_id == None  # Not yet assigned to any professional
     ).all()
 
     result = []
@@ -546,7 +735,7 @@ def get_available_requests(professional_id):
         result.append({
             'id': request.id,
             'service_id': request.service_id,
-            'service_name': Service.query.get(request.service_id).name,
+            'service_name': request.service.name,
             'customer_id': request.customer_id,
             'customer_name': customer.name,
             'date_of_request': request.date_of_request.isoformat(),
@@ -559,6 +748,8 @@ def get_available_requests(professional_id):
         })
 
     return jsonify(result)
+
+# Service Request routes
 
 @app.route('/service-requests/<int:request_id>/accept', methods=['POST'])
 def accept_service_request(request_id):
@@ -617,28 +808,106 @@ def complete_service_request(request_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+# Customer routes
+
+@app.route('/customers/<int:customer_id>', methods=['GET'])
+def get_customer(customer_id):
+    customer = Customer.query.get_or_404(customer_id)
+    return jsonify({
+        'id': customer.id,
+        'name': customer.name,
+        'location': customer.location,
+        'pin_code': customer.pin_code
+    })
+
+# Authentication routes (for completeness)
+
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
+    data = request.json
     email = data.get('email')
     password = data.get('password')
 
-    if not email or not password:
-        return jsonify({'error': 'Email and password are required'}), 400
-
-    if email == 'admin@abc.com' and password == 'admin':
-        return jsonify({"userId": -1, "userRole": 'ADMIN'}), 200
-
     user = User.query.filter_by(email=email).first()
 
-    if user and bcrypt.check_password_hash(user.password_hash, password) and user.is_active:
-        return jsonify({"userId": user.id, "userRole": str(user.role.name)}), 200
+    if not user or not user.check_password(password):
+        return jsonify({'error': 'Invalid credentials'}), 401
 
-    elif user and bcrypt.check_password_hash(user.password_hash, password) and not user.is_active:
-        return jsonify({'error': 'Your account is blocked!'}), 401
+    # Get role-specific data
+    user_data = {
+        'id': user.id,
+        'email': user.email,
+        'role': user.role.value
+    }
 
-    else:
-        return jsonify({'error': 'Invalid email or password'}), 401
+    if user.role == Role.PROFESSIONAL:
+        professional = user.professional
+        user_data['is_verified'] = professional.is_verified
+        user_data['name'] = professional.name
+        user_data['service_id'] = professional.service_id
+    elif user.role == Role.CUSTOMER:
+        customer = user.customer
+        user_data['name'] = customer.name
+
+    return jsonify({
+        'message': 'Login successful',
+        'user': user_data
+    }), 200
+
+@app.route('/register/professional', methods=['POST'])
+def register_professional():
+    data = request.json
+
+    # Check if email is already registered
+    if User.query.filter_by(email=data.get('email')).first():
+        return jsonify({'error': 'Email already registered'}), 400
+
+    # Create new user
+    user = User(
+        email=data.get('email'),
+        role=Role.PROFESSIONAL,
+        is_active=True
+    )
+    user.set_password(data.get('password'))
+
+    # Create professional profile
+    professional = ServiceProfessional(
+        name=data.get('name'),
+        service_id=data.get('service_id'),
+        experience=data.get('experience', 0),
+        description=data.get('description', ''),
+        is_verified=False  # Professionals must be verified by admin
+    )
+
+    # Associate with user
+    user.professional = professional
+
+    # Save to database
+    try:
+        db.session.add(user)
+        db.session.commit()
+        return jsonify({
+            'message': 'Registration successful',
+            'user_id': user.id
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Service routes (for completeness)
+
+@app.route('/services', methods=['GET'])
+def get_services():
+    services = Service.query.all()
+    return jsonify([{
+        'id': service.id,
+        'name': service.name,
+        'base_price': service.base_price,
+        'time_required': service.time_required,
+        'description': service.description
+    } for service in services])
+
+# Review routes (for completeness)
 
 @app.route('/service-requests/<int:request_id>/review', methods=['POST'])
 def add_review(request_id):
@@ -650,7 +919,7 @@ def add_review(request_id):
         return jsonify({'error': 'Only completed service requests can be reviewed'}), 400
 
     # Check if a review already exists
-    if hasattr(service_request, 'review') and service_request.review:
+    if service_request.review:
         return jsonify({'error': 'A review already exists for this service request'}), 400
 
     data = request.json
@@ -664,17 +933,18 @@ def add_review(request_id):
         review_text=data.get('review_text', '')
     )
 
-    # Add to database
-    db.session.add(review)
+    # Associate with service request
+    service_request.review = review
 
     # Update professional's average rating
     professional = ServiceProfessional.query.get(service_request.professional_id)
     reviews = Review.query.filter_by(professional_id=professional.id).all()
-    total_rating = sum(r.rating for r in reviews) + data.get('rating')
+    total_rating = sum(review.rating for review in reviews) + data.get('rating')
     professional.rating = total_rating / (len(reviews) + 1)
 
     # Save to database
     try:
+        db.session.add(review)
         db.session.commit()
         return jsonify({'message': 'Review added successfully'}), 201
     except Exception as e:

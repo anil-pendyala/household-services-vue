@@ -55,6 +55,7 @@ class ServiceProfessional(db.Model):
     description = db.Column(db.Text, nullable=True)
     is_verified = db.Column(db.Boolean, default=False)
     profile_doc_url = db.Column(db.String(255), nullable=True)
+    rating = db.Column(db.Float, default=0.0)
 
     # Relationships
     service = db.relationship('Service', backref='professionals')
@@ -81,8 +82,10 @@ class ServiceRequest(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey('customer.id'), nullable=False)
     professional_id = db.Column(db.Integer, db.ForeignKey('service_professional.id'), nullable=True)
     date_of_request = db.Column(db.DateTime, default=datetime.utcnow)
+    preferred_date = db.Column(db.DateTime, nullable=True)
+    preferred_time = db.Column(db.String(10), nullable=True)
     date_of_completion = db.Column(db.DateTime, nullable=True)
-    service_status = db.Column(db.Enum(ServiceStatus), default=ServiceStatus.REQUESTED)
+    service_status = db.Column(db.String(20), nullable=False)
     remarks = db.Column(db.Text, nullable=True)
     location = db.Column(db.String(100), nullable=True)
     pin_code = db.Column(db.String(10), nullable=True)
@@ -100,8 +103,13 @@ class Review(db.Model):
     review_text = db.Column(db.Text, nullable=True)
     date_created = db.Column(db.DateTime, default=datetime.utcnow)
 
+# from enum import Enum
+
+
+
 # Function to initialize database
 def init_db(app):
     db.init_app(app)
     with app.app_context():
+        # db.drop_all()
         db.create_all()
