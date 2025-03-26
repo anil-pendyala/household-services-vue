@@ -18,6 +18,7 @@
     <script src="customer_my_bookings.js"></script>
     <script src="professional_requests.js"></script>
     <script src="professional_assignments.js"></script>
+    <script src="professional_profile.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 
     <style>
@@ -263,6 +264,7 @@
                 <div v-if="isLoggedIn && userRole === 'PROFESSIONAL'" class="admin-nav-group">
                     <router-link to="/professional/requests" class="nav-btn">Requests</router-link>
                     <router-link to="/professional/assignments" class="nav-btn">To Be Attended</router-link>
+                    <router-link to="/professional/profile" class="nav-btn">Profile & Stats</router-link>
                 </div>
 
                 <!-- Logout button for logged-in users -->
@@ -466,7 +468,8 @@
                 { path: '/customer/book-a-service', component: BookService },
                 { path: '/customer/my-bookings', component: MyBookings },
                 { path: '/professional/requests', component: ProfessionalRequests },
-                { path: '/professional/assignments', component: ProfessionalAssignments }
+                { path: '/professional/assignments', component: ProfessionalAssignments },
+                { path: '/professional/profile', component: ProfessionalProfile }
             ]
         });
 
@@ -485,13 +488,14 @@ router.beforeEach((to, from, next) => {
         '/customer/book-a-service',
         '/customer/my-bookings',
         '/professional/requests',
-        '/professional/assignments'
+        '/professional/assignments',
+        '/professional/profile'
     ];
 
     // Role-specific routes
     const adminRoutes = ['/admin-dashboard', '/admin/manage-customers', '/admin/manage-professionals', '/admin/manage-requests'];
     const customerRoutes = ['/customer-dashboard', '/customer/book-a-service', '/customer/my-bookings'];
-    const professionalRoutes = ['/professional/requests', '/professional/assignments'];
+    const professionalRoutes = ['/professional/requests', '/professional/assignments', '/professional/profile'];
 
     // Check if route requires authentication
     if (authRequiredRoutes.includes(to.path)) {

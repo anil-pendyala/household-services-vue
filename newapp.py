@@ -681,5 +681,276 @@ def add_review(request_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/reviews', methods=['POST'])
+def submit_review():
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        required_fields = ['service_request_id', 'professional_id', 'customer_id', 'rating', 'review_text']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        # Check if review already exists for this service request
+        existing_review = Review.query.filter_by(service_request_id=data['service_request_id']).first()
+        if existing_review:
+            return jsonify({"error": "Review already submitted for this service request"}), 400
+
+        # Create new review
+        new_review = Review(
+            service_request_id=data['service_request_id'],
+            customer_id=data['customer_id'],
+            professional_id=data['professional_id'],
+            rating=data['rating'],
+            review_text=data.get('review_text', '')
+        )
+        db.session.add(new_review)
+
+        # Update the service request status
+        service_request = ServiceRequest.query.get(data['service_request_id'])
+        if not service_request:
+            db.session.rollback()
+            return jsonify({"error": "Service request not found"}), 404
+
+        # Update professional's overall rating
+        professional = ServiceProfessional.query.get(data['professional_id'])
+        if professional:
+            # Calculate new average rating
+            reviews = Review.query.filter_by(professional_id=professional.id).all()
+            total_reviews = len(reviews) + 1  # Including new review
+            total_rating = sum(review.rating for review in reviews) + data['rating']
+            professional.rating = total_rating / total_reviews
+
+        db.session.commit()
+        return jsonify({"message": "Review submitted successfully"}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error submitting review: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/service-requests/<int:request_id>/review', methods=['GET'])
+def get_review_for_request(request_id):
+    try:
+        review = Review.query.filter_by(service_request_id=request_id).first()
+        if not review:
+            return jsonify({"has_review": False}), 200
+
+        return jsonify({
+            "has_review": True,
+            "rating": review.rating,
+            "review_text": review.review_text
+        }), 200
+
+    except Exception as e:
+        print(f"Error fetching review: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/professionals/<int:professional_id>/profile', methods=['GET'])
+def get_professional_profile(professional_id):
+    """
+    Retrieve professional profile details
+    """
+    professional = ServiceProfessional.query.get_or_404(professional_id)
+
+    # Count completed and ongoing services
+    completed_services = ServiceRequest.query.filter_by(
+        professional_id=professional_id,
+        service_status='CLOSED'
+    ).count()
+
+    ongoing_services = ServiceRequest.query.filter(
+        ServiceRequest.professional_id == professional_id,
+        ServiceRequest.service_status.in_(['ASSIGNED', 'IN_PROGRESS'])
+    ).count()
+
+    # Fetch recent reviews
+    reviews = Review.query.filter_by(professional_id=professional_id)\
+        .order_by(Review.date_created.desc())\
+        .limit(5)\
+        .all()
+
+    review_list = [{
+        'id': review.id,
+        'customer_name': review.customer.name,
+        'rating': review.rating,
+        'review_text': review.review_text,
+        'date_created': review.date_created.isoformat(),
+        'service_name': review.service_request.service.name
+    } for review in reviews]
+
+    return jsonify({
+        'name': professional.name,
+        'service_name': professional.service.name,
+        'is_verified': professional.is_verified,
+        'rating': professional.rating,
+        'description': professional.description,
+        'email': professional.user.email,
+        'experience': professional.experience,
+        'completed_services': completed_services,
+        'ongoing_services': ongoing_services,
+        'reviews': review_list
+    })
+
+@app.route('/professionals/<int:professional_id>/extended-statistics', methods=['GET'])
+def get_professional_extended_statistics(professional_id):
+    """
+    Retrieve extended professional statistics
+    """
+    # Calculate requested services
+    requested_services = ServiceRequest.query.filter_by(
+        professional_id=professional_id,
+        service_status='requested'
+    ).count()
+
+    # Calculate total earnings
+    service_requests = ServiceRequest.query.filter_by(
+        professional_id=professional_id,
+        service_status='closed'
+    ).all()
+
+    total_earnings = sum(
+        request.service.base_price for request in service_requests
+    )
+
+    # Pending earnings (services completed but not yet paid)
+    pending_service_requests = ServiceRequest.query.filter_by(
+        professional_id=professional_id,
+        service_status='completed_unpaid'
+    ).all()
+
+    pending_earnings = sum(
+        request.service.base_price for request in pending_service_requests
+    )
+
+    # Calculate average service price
+    completed_services = len(service_requests)
+    average_service_price = total_earnings / completed_services if completed_services > 0 else 0
+
+    return jsonify({
+        'requested_services': requested_services,
+        'total_earnings': total_earnings,
+        'pending_earnings': pending_earnings,
+        'average_service_price': average_service_price
+    })
+
+@app.route('/professionals/<int:professional_id>/profile', methods=['PATCH'])
+def update_professional_profile(professional_id):
+    """
+    Update professional profile details
+    """
+    professional = ServiceProfessional.query.get_or_404(professional_id)
+    user = professional.user
+
+    data = request.get_json()
+
+    # Update description
+    if 'description' in data:
+        professional.description = data['description']
+
+    # Update name and email
+    if 'name' in data:
+        professional.name = data['name']
+        user.name = data['name']
+
+    if 'email' in data:
+        # Check if email is unique
+        existing_user = User.query.filter(
+            User.email == data['email'],
+            User.id != professional_id
+        ).first()
+
+        if existing_user:
+            return jsonify({"error": "Email already in use"}), 400
+
+        user.email = data['email']
+
+    try:
+        db.session.commit()
+        return jsonify({"message": "Profile updated successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to update profile", "details": str(e)}), 500
+
+@app.route('/professionals/upload-profile-picture', methods=['POST'])
+def upload_profile_picture():
+    """
+    Upload professional profile picture
+    """
+    # Check if file is present in the request
+    if 'profile_picture' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files['profile_picture']
+
+    # Check if filename is empty
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    # Generate a unique filename
+    filename = f"{uuid.uuid4()}_{file.filename}"
+
+    # Define upload directory
+    upload_folder = 'uploads/profile_pictures'
+    os.makedirs(upload_folder, exist_ok=True)
+
+    # Save file
+    file_path = os.path.join(upload_folder, filename)
+    file.save(file_path)
+
+    # You'll need to update the professional's profile picture URL in the database
+    professional_id = request.form.get('professional_id')  # Assume this is passed
+    professional = ServiceProfessional.query.get_or_404(professional_id)
+    professional.profile_doc_url = f"/uploads/profile_pictures/{filename}"
+
+    try:
+        db.session.commit()
+        return jsonify({
+            "message": "Profile picture uploaded successfully",
+            "profile_picture_url": professional.profile_doc_url
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to upload profile picture", "details": str(e)}), 500
+
+
+
 if __name__ == '__main__':
     app.run(debug=True)
