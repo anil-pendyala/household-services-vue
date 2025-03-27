@@ -1,45 +1,56 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file, send_from_directory
+# from flask_bcrypt import Bcrypt
+# from flask_cors import CORS
+from models import db, User, Customer, Role, Service, ServiceProfessional, ServiceRequest, Review, init_db
+# from datetime import datetime, timedelta
+# from flask_apscheduler import APScheduler
+# import requests
+# from flask_mail import Mail, Message
+# from jinja2 import Template
+# from flask_caching import Cache
+# # from celery_worker import make_celery
+# import pandas as pd
+# from tasks import export_closed_requests_task
+# from celery.result import AsyncResult
+# from celery_worker import export_closed_requests_task
+# from flask_caching import Cache
+
+
+
+
+
+
+
+
+
+
+# from flask import Flask, jsonify, send_from_directory
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
-from models import db, User, Customer, Role, Service, ServiceProfessional, ServiceRequest, Review, init_db
-from datetime import datetime, timedelta
+from models import db, init_db
+# from tasks import export_closed_requests_task
+from celery_worker import init_celery, celery   # ✅ The real deal
 from flask_apscheduler import APScheduler
-import requests
-from flask_mail import Mail, Message
-from jinja2 import Template
 from flask_caching import Cache
-
-
-
+from celery_init import celery_init_app
+from tasks import csv_report
+from celery.result import AsyncResult
 
 
 app = Flask(__name__)
-bcrypt = Bcrypt(app)
-CORS(app)  # Allow frontend to communicate with backend
-scheduler = APScheduler()
-scheduler.init_app(app)
-scheduler.start()
 
+celery = celery_init_app(app)
+# --- Configurations ---
+app.config['SECRET_KEY'] = 'supersecret'
 
-
-
-
-cache = Cache(app, config={
-    'CACHE_TYPE': 'RedisCache',
-    'CACHE_REDIS_HOST': 'localhost',
-    'CACHE_REDIS_PORT': 6379,
-    'CACHE_DEFAULT_TIMEOUT': 300  # 5 minutes by default
-})
-
-
-
-
-
-
-# Database Configuration
+# Database config
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///household.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Google Chat Webhook (⚠️ Never commit real keys publicly)
 app.config['GOOGLE_CHAT_WEBHOOK'] = 'https://chat.googleapis.com/v1/spaces/AAAAmdnP1Jg/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=g5U0xA3zpRCl943cZdXF2NnkAu7eKdr6xoYyV-w49Zw'
+
+# Mail Config
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
@@ -47,12 +58,144 @@ app.config['MAIL_USERNAME'] = 'anilpendyalaleads@gmail.com'
 app.config['MAIL_PASSWORD'] = 'wjbf xdwr ozcr ssva'
 app.config['MAIL_DEFAULT_SENDER'] = 'anilpendyalaleads@gmail.com'
 
+# --- Extensions ---
+bcrypt = Bcrypt(app)
+CORS(app)
+scheduler = APScheduler()
+scheduler.init_app(app)
+scheduler.start()
+cache = Cache(app, config={
+    'CACHE_TYPE': 'RedisCache',
+    'CACHE_REDIS_HOST': 'localhost',
+    'CACHE_REDIS_PORT': 6379,
+    'CACHE_DEFAULT_TIMEOUT': 300
+})
+
+init_db(app)  # ✅ DB initialized
+
+# --- Routes ---
+
+@app.route('/api/export_csv')
+def export_csv():
+     result = csv_report.delay()
+     return jsonify({
+          "id": result.id,
+          "result": result.result
+     })
+
+
+
+@app.route('/api/csv_result/<id>')
+def csv_result(id):
+    res = AsyncResult(id)
+
+    if not res.ready():
+        return '', 202  # still processing
+
+    if res.result is None:
+        abort(500, description="Task failed or result missing")
+
+    return send_from_directory('static', res.result, as_attachment=True)
 
 
 
 
-# Initialize database
-init_db(app)
+
+
+
+
+
+# @app.route('/export_closed_requests', methods=['GET'])
+# def export_closed_requests():
+#     try:
+#         # Trigger the Celery task
+#         task = export_closed_requests_task.delay()
+
+#         return jsonify({
+#             'message': 'Export task started',
+#             'task_id': task.id
+#         }), 202
+#     except Exception as e:
+#         return jsonify({
+#             'error': str(e)
+#         }), 500
+
+# # Add a route to check task status
+# @app.route('/task_status/<task_id>', methods=['GET'])
+# def check_task_status(task_id):
+#     try:
+#         task = export_closed_requests_task.AsyncResult(task_id)
+
+#         if task.state == 'PENDING':
+#             response = {
+#                 'state': task.state,
+#                 'status': 'Task is waiting for execution'
+#             }
+#         elif task.state != 'FAILURE':
+#             response = {
+#                 'state': task.state,
+#                 'result': task.result
+#             }
+#         else:
+#             response = {
+#                 'state': task.state,
+#                 'error': str(task.info)
+#             }
+
+#         return jsonify(response)
+#     except Exception as e:
+#         return jsonify({
+#             'error': str(e)
+#         }), 500
+
+# # Add a route to download the exported CSV
+# @app.route('/download_exports/<filename>', methods=['GET'])
+# def download_export(filename):
+#     try:
+#         export_dir = 'exports'
+#         file_path = os.path.join(export_dir, filename)
+
+#         if not os.path.exists(file_path):
+#             return jsonify({
+#                 'error': 'File not found'
+#             }), 404
+
+#         return send_file(
+#             file_path,
+#             mimetype='text/csv',
+#             as_attachment=True,
+#             download_name=filename
+#         )
+#     except Exception as e:
+#         return jsonify({
+#             'error': str(e)
+#         }), 500
+
+# # Import the Celery task (make sure this is after Celery initialization)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -313,13 +456,79 @@ def send_monthly_reports():
             print(f"Error sending report to {customer.name}: {str(e)}")
 
 # Schedule the monthly report job
-@scheduler.task('cron', id='monthly_customer_report', day='27', hour=13, minute=41)
+@scheduler.task('cron', id='monthly_customer_report', day='27', hour=13, minute=47)
 def schedule_monthly_reports():
     """
     Scheduled job to generate and send monthly reports on the first day of each month
     """
     with app.app_context():
         send_monthly_reports()
+
+
+
+
+
+
+
+
+
+
+
+# @celery.task()
+# def export_closed_requests_task():
+#     closed_requests = ServiceRequest.query.filter_by(service_status=ServiceStatus.CLOSED.value).all()
+
+#     data = []
+#     for req in closed_requests:
+#         data.append({
+#             'service_request_id': req.id,
+#             'service_id': req.service_id,
+#             'customer_id': req.customer_id,
+#             'professional_id': req.professional_id,
+#             'date_of_request': req.date_of_request,
+#             'date_of_completion': req.date_of_completion,
+#             'remarks': req.remarks,
+#             'location': req.location,
+#             'pin_code': req.pin_code
+#         })
+
+#     df = pd.DataFrame(data)
+#     csv_file = 'closed_service_requests.csv'
+#     df.to_csv(csv_file, index=False)
+
+#     return f"Exported {len(data)} records to {csv_file}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+# @app.route('/admin/export_closed_requests', methods=['POST'])
+# def export_closed_requests():
+#     task = export_closed_requests_task.delay()
+#     return {"message": "Export started!", "task_id": task.id}, 202
+
+
+# @app.route('/admin/download_closed_requests', methods=['GET'])
+# def download_closed_requests():
+#     try:
+#         return send_file("closed_service_requests.csv", as_attachment=True)
+#     except FileNotFoundError:
+#         return {"error": "CSV not generated yet."}, 404
+
+
+
+
+
+
+
 
 
 

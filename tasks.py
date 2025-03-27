@@ -1,71 +1,20 @@
-import requests
-from celery import Celery
-from models import db, ServiceProfessional, ServiceRequest
-from sqlalchemy import func
-from datetime import datetime, timedelta
-from flask import current_app
-from celery.schedules import crontab
-from newapp import app
+from celery import shared_task
+from models import ServiceRequest
+import datetime
+import csv
 
+@shared_task(ignore_result=False, name="export_csv")
+def csv_report():
+    all_requests = ServiceRequest.query.filter_by(service_status='CLOSED').all()
 
-# Setup Celery
-celery = Celery('tasks', broker='redis://localhost:6379/0')
-celery.conf.beat_schedule = {
-    'send-daily-reminders': {
-        'task': 'tasks.send_daily_reminders',
-        'schedule': crontab(hour=18, minute=0),  # Run every day at 6 PM
-    },
-}
+    csv_file_name = f"requests_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+    with open(f'static/{csv_file_name}', 'w', newline = "") as f:
+        sr_no = 1
+        requests_csv = csv.writer(f, delimiter = ",")
+        requests_csv.writerow(['Sr_No', 'Request_Id', 'Service_Id', 'Customer_Id', 'Professional_Id', 'Date_of_Request', 'Date_of_Completion', 'Remarks', 'Location', 'Pincode'])
 
-def send_google_chat_notification(webhook_url, message):
-    """
-    Send a notification to Google Chat using a webhook
-    """
-    try:
-        payload = {
-            "text": message
-        }
-        response = requests.post(webhook_url, json=payload)
-        return response.status_code == 200
-    except Exception as e:
-        print(f"Error sending Google Chat notification: {e}")
-        return False
+        for request in all_requests:
+            requests_csv.writerow([sr_no, request.id, request.service_id, request.customer_id, request.professional_id, request.date_of_request, request.date_of_completion, request.remarks, request.location, request.pin_code])
+            sr_no += 1
 
-@celery.task(name='tasks.send_daily_reminders')
-def send_daily_reminders():
-    """
-    Send daily reminders to service professionals about pending service requests
-    """
-    with app.app_context():
-        # Find professionals with pending service requests
-        pending_requests = db.session.query(
-            ServiceProfessional.id,
-            ServiceProfessional.name,
-            ServiceProfessional.email,
-            func.count(ServiceRequest.id).label('pending_request_count')
-        ).join(
-            ServiceRequest, ServiceProfessional.id == ServiceRequest.professional_id
-        ).filter(
-            ServiceRequest.service_status == 'REQUESTED'
-        ).group_by(
-            ServiceProfessional.id,
-            ServiceProfessional.name,
-            ServiceProfessional.email
-        ).all()
-
-        google_chat_webhook = current_app.config.get('GOOGLE_CHAT_WEBHOOK')
-
-        for professional in pending_requests:
-            message = (
-                f"Daily Reminder: You have {professional.pending_request_count} "
-                f"pending service request(s) awaiting your action. "
-                f"Please log in to your account to review and respond."
-            )
-
-            # Send Google Chat notification
-            if google_chat_webhook:
-                send_google_chat_notification(google_chat_webhook, message)
-
-            # Optional: Add email or SMS notification logic here
-
-        return f"Sent reminders to {len(pending_requests)} professionals"
+    return csv_file_name

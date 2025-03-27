@@ -1,6 +1,5 @@
-
 const RequestManagement = {
-     template: `
+  template: `
     <div class="container mt-4">
       <h2 class="text-center mb-4">Service Requests</h2>
 
@@ -23,6 +22,17 @@ const RequestManagement = {
           :class="['btn', activeTab === 'cancelled' ? 'btn-danger' : 'btn-outline-danger']"
         >
           Cancelled Requests
+        </button>
+
+        <!-- CSV Export Button with Enhanced Styling -->
+        <button
+          @click="exportAsCSV"
+          class="btn btn-outline-secondary ml-3"
+          :disabled="isExporting"
+          :class="{'btn-warning': isExporting}"
+        >
+          <i class="fas fa-file-export mr-2"></i>
+          {{ isExporting ? 'Exporting...' : 'Export to CSV' }}
         </button>
       </div>
 
@@ -52,7 +62,8 @@ const RequestManagement = {
   data() {
     return {
       requests: [],
-      activeTab: 'ongoing'
+      activeTab: 'ongoing',
+      isExporting: false
     };
   },
   computed: {
@@ -79,7 +90,16 @@ const RequestManagement = {
         })
         .catch(error => {
           console.error('Error fetching requests:', error);
+          this.$toast.error('Failed to fetch service requests');
         });
+    },
+    exportAsCSV() {
+      fetch('http://127.0.0.1:5000/api/export_csv')
+      .then(response => response.json())
+      .then(data => {
+        window.location.href = `http://127.0.0.1:5000/api/csv_result/${data.id}`
+      })
+
     }
   },
   created() {
