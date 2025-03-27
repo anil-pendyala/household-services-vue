@@ -2,19 +2,340 @@ from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 from models import db, User, Customer, Role, Service, ServiceProfessional, ServiceRequest, Review, init_db
-from datetime import datetime
+from datetime import datetime, timedelta
+from flask_apscheduler import APScheduler
+import requests
+from flask_mail import Mail, Message
+from jinja2 import Template
+from flask_caching import Cache
+
+
+
 
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
 CORS(app)  # Allow frontend to communicate with backend
+scheduler = APScheduler()
+scheduler.init_app(app)
+scheduler.start()
+
+
+
+
+
+cache = Cache(app, config={
+    'CACHE_TYPE': 'RedisCache',
+    'CACHE_REDIS_HOST': 'localhost',
+    'CACHE_REDIS_PORT': 6379,
+    'CACHE_DEFAULT_TIMEOUT': 300  # 5 minutes by default
+})
+
+
+
+
+
 
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///household.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['GOOGLE_CHAT_WEBHOOK'] = 'https://chat.googleapis.com/v1/spaces/AAAAmdnP1Jg/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=g5U0xA3zpRCl943cZdXF2NnkAu7eKdr6xoYyV-w49Zw'
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'anilpendyalaleads@gmail.com'
+app.config['MAIL_PASSWORD'] = 'wjbf xdwr ozcr ssva'
+app.config['MAIL_DEFAULT_SENDER'] = 'anilpendyalaleads@gmail.com'
+
+
+
+
 
 # Initialize database
 init_db(app)
+
+
+
+
+
+
+
+def send_google_chat_message():
+    """
+    Send a periodic message to Google Chat webhook
+    """
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    message = {
+        "text": f"Helloooo {current_time}"
+    }
+
+    try:
+        response = requests.post(
+            app.config['GOOGLE_CHAT_WEBHOOK'],
+            json=message
+        )
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        print(f"Message sent successfully at {current_time}")
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to send message: {e}")
+
+
+
+
+
+
+
+
+
+def send_daily_reminders():
+    """
+    Send daily reminders to professionals about pending service requests
+    in their service category
+    """
+    # Use app context to ensure database queries work
+    with app.app_context():
+        # Find all pending service requests without a professional assigned
+        pending_requests = ServiceRequest.query.filter(
+            ServiceRequest.service_status == 'REQUESTED'
+        ).all()
+
+        # Group requests by service
+        service_requests_map = {}
+        for request in pending_requests:
+            if request.service_id not in service_requests_map:
+                service_requests_map[request.service_id] = []
+            service_requests_map[request.service_id].append(request)
+
+        # Find professionals for each service with pending requests
+        for service_id, requests in service_requests_map.items():
+            # Find professionals in this service category who are verified
+            professionals = ServiceProfessional.query.filter(
+                ServiceProfessional.service_id == service_id,
+                ServiceProfessional.is_verified == True
+            ).all()
+
+            # Send personalized reminder to each professional
+            for professional in professionals:
+                send_professional_reminder(professional, requests)
+
+def send_professional_reminder(professional, pending_requests):
+    """
+    Send a personalized reminder to a professional about pending requests
+
+    :param professional: ServiceProfessional object
+    :param pending_requests: List of pending ServiceRequest objects
+    """
+    # Prepare the message
+    message = {
+        "text": f"{professional.name}'s Daily Reminder:\n\nYou have {len(pending_requests)} pending service request(s) in your category.\n\n"
+        f"Details:\n"
+        f"Service Category: {professional.service.name}\n"
+        f"Number of Available Requests: {len(pending_requests)}\n\n"
+        "Log in to view and accept these requests!"
+    }
+
+    # Send message to Google Chat webhook
+    try:
+        response = requests.post(
+            app.config['GOOGLE_CHAT_WEBHOOK'],
+            json=message
+        )
+        response.raise_for_status()
+        print(f"Reminder sent to professional {professional.name}")
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to send reminder to professional {professional.name}: {e}")
+
+
+
+
+# Schedule the message to be sent every 2 minutes
+scheduler.add_job(
+    id='send_daily_reminders',
+    func=send_daily_reminders,
+    trigger='cron',
+    hour=17
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+def generate_monthly_customer_activity_report(customer_id):
+    """
+    Generate a comprehensive monthly activity report for a specific customer
+
+    :param customer_id: ID of the customer
+    :return: HTML report as a string
+    """
+    # Get customer details
+    customer = Customer.query.get(customer_id)
+    if not customer:
+        return None
+
+    # Calculate report period (previous month)
+    today = datetime.utcnow()
+    first_day_of_current_month = today.replace(day=1)
+    last_day_of_previous_month = first_day_of_current_month - timedelta(days=1)
+    first_day_of_previous_month = last_day_of_previous_month.replace(day=1)
+
+    # Query service requests for the previous month
+    service_requests = ServiceRequest.query.filter(
+        ServiceRequest.customer_id == customer_id,
+        ServiceRequest.date_of_request >= first_day_of_previous_month,
+        ServiceRequest.date_of_request <= last_day_of_previous_month
+    ).all()
+
+    # Aggregate statistics
+    total_requests = len(service_requests)
+    completed_requests = sum(1 for req in service_requests if req.service_status == 'CLOSED')
+    cancelled_requests = sum(1 for req in service_requests if req.service_status == 'CANCELLED')
+
+    # Group requests by service
+    service_breakdown = {}
+    for request in service_requests:
+        service_name = request.service.name
+        if service_name not in service_breakdown:
+            service_breakdown[service_name] = {
+                'total': 0,
+                'completed': 0,
+                'cancelled': 0
+            }
+        service_breakdown[service_name]['total'] += 1
+        if request.service_status == 'CLOSED':
+            service_breakdown[service_name]['completed'] += 1
+        elif request.service_status == 'CANCELLED':
+            service_breakdown[service_name]['cancelled'] += 1
+
+    # HTML Report Template
+    html_template = Template("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Monthly Service Activity Report</title>
+        <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
+            h1 { color: #333; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            .summary { background-color: #f9f9f9; padding: 15px; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <h1>Monthly Service Activity Report</h1>
+        <p>Dear {{ customer_name }},</p>
+
+        <div class="summary">
+            <h2>Report Summary</h2>
+            <p>Report Period: {{ start_date }} to {{ end_date }}</p>
+            <p>Total Service Requests: {{ total_requests }}</p>
+            <p>Completed Requests: {{ completed_requests }}</p>
+            <p>Cancelled Requests: {{ cancelled_requests }}</p>
+        </div>
+
+        <h2>Service Breakdown</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Total Requests</th>
+                    <th>Completed</th>
+                    <th>Cancelled</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for service, stats in service_breakdown.items() %}
+                <tr>
+                    <td>{{ service }}</td>
+                    <td>{{ stats.total }}</td>
+                    <td>{{ stats.completed }}</td>
+                    <td>{{ stats.cancelled }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <p>Thank you for using our services!</p>
+        <h3>Ghar Seva</h3>
+    </body>
+    </html>
+    """)
+
+    # Render the template
+    html_report = html_template.render(
+        customer_name=customer.name,
+        start_date=first_day_of_previous_month.strftime('%Y-%m-%d'),
+        end_date=last_day_of_previous_month.strftime('%Y-%m-%d'),
+        total_requests=total_requests,
+        completed_requests=completed_requests,
+        cancelled_requests=cancelled_requests,
+        service_breakdown=service_breakdown
+    )
+
+    return html_report
+
+def send_monthly_reports():
+    """
+    Send monthly activity reports to all customers
+    """
+    # Get all customers
+    customers = Customer.query.all()
+
+    # Configure Flask-Mail (you'll need to set up these config variables)
+    mail = Mail(app)
+
+    for customer in customers:
+        try:
+            # Generate report for each customer
+            report_html = generate_monthly_customer_activity_report(customer.id)
+
+            if report_html:
+                # Prepare and send email
+                msg = Message(
+                    'Your Monthly Service Activity Report',
+                    sender='anilpendyalaleads@gmail.com',
+                    recipients=[customer.user.email]
+                )
+                msg.html = report_html
+                mail.send(msg)
+
+                print(f"Report sent to {customer.name}")
+        except Exception as e:
+            print(f"Error sending report to {customer.name}: {str(e)}")
+
+# Schedule the monthly report job
+@scheduler.task('cron', id='monthly_customer_report', day='27', hour=13, minute=41)
+def schedule_monthly_reports():
+    """
+    Scheduled job to generate and send monthly reports on the first day of each month
+    """
+    with app.app_context():
+        send_monthly_reports()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @app.route('/register-customer', methods=['POST'])
 def register_customer():
@@ -150,21 +471,29 @@ def update_service(service_id):
 def delete_service(service_id):
     service = Service.query.get(service_id)
 
-    if not service:
-        return jsonify({"error": "Service not found"}), 404
+    # if not service:
+    #     return jsonify({"error": "Service not found"}), 404
 
     try:
-        if len(service.professionals) > 0 or len(service.service_requests) > 0:
+        # Check for associated professionals
+        professionals = ServiceProfessional.query.filter_by(service_id=service_id).all()
+
+        # Check for associated service requests
+        service_requests = ServiceRequest.query.filter_by(service_id=service_id).all()
+
+        if professionals or service_requests:
             return jsonify({
-                "error": "Cannot delete service as it is associated with professionals or service requests"
+                "error": "Cannot delete service as it is associated with professionals or service requests",
             }), 400
 
         db.session.delete(service)
         db.session.commit()
         return jsonify({"message": "Service deleted successfully"}), 200
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Failed to delete service: {str(e)}"}), 500
+
 
 @app.route('/customers', methods=['GET'])
 def get_all_customers():
@@ -240,6 +569,7 @@ def unblock_user(user_id):
         return jsonify({"error": f"Failed to unblock user: {str(e)}"}), 500
 
 @app.route('/professionals', methods=['GET'])
+@cache.cached(timeout=600)
 def get_all_professionals():
     """
     Get a list of all service professionals with their account status and service details
@@ -952,5 +1282,270 @@ def upload_profile_picture():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/admin/service-requests', methods=['GET'])
+def get_all_service_requests():
+    """
+    Fetch all service requests with basic information
+    """
+    try:
+        # Comprehensive query to fetch all service requests with basic details
+        requests_query = db.session.query(
+            ServiceRequest,
+            Service.name.label('service_name'),
+            Customer.name.label('customer_name')
+        ).join(
+            Service, ServiceRequest.service_id == Service.id
+        ).join(
+            Customer, ServiceRequest.customer_id == Customer.id
+        )
+
+        # Execute the query
+        requests_data = requests_query.all()
+
+        # Format the results
+        result = []
+        for (req, service_name, customer_name) in requests_data:
+            request_data = {
+                'id': req.id,
+                'service_name': service_name,
+                'customer_name': customer_name,
+                'date_of_request': req.date_of_request.isoformat() if req.date_of_request else None,
+                'service_status': req.service_status.lower()
+            }
+            result.append(request_data)
+
+        return jsonify(result)
+
+    except Exception as e:
+        app.logger.error(f"Error fetching service requests: {str(e)}")
+        return jsonify({"error": "Failed to retrieve service requests"}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/admin/top-services', methods=['GET'])
+def get_top_services():
+    """
+    Retrieve top 5 services by number of completed requests
+    """
+    top_services = db.session.query(
+        Service.name,
+        db.func.count(ServiceRequest.id).label('total_requests')
+    ).join(
+        ServiceRequest, Service.id == ServiceRequest.service_id
+    ).filter(
+        ServiceRequest.service_status == 'CLOSED'
+    ).group_by(
+        Service.name
+    ).order_by(
+        db.text('total_requests DESC')
+    ).limit(5).all()
+
+    return jsonify([
+        {
+            'name': service.name,
+            'total_requests': service.total_requests
+        } for service in top_services
+    ])
+
+@app.route('/admin/top-professionals', methods=['GET'])
+def get_top_professionals():
+    """
+    Retrieve top 5 professionals by number of completed requests and rating
+    """
+    top_professionals = db.session.query(
+        ServiceProfessional.name,
+        ServiceProfessional.rating,
+        db.func.count(ServiceRequest.id).label('total_completed_requests')
+    ).join(
+        ServiceRequest, ServiceProfessional.id == ServiceRequest.professional_id
+    ).filter(
+        ServiceRequest.service_status == 'CLOSED'
+    ).group_by(
+        ServiceProfessional.id,
+        ServiceProfessional.name,
+        ServiceProfessional.rating
+    ).order_by(
+        db.text('total_completed_requests DESC, rating DESC')
+    ).limit(5).all()
+
+    return jsonify([
+        {
+            'name': prof.name,
+            'rating': prof.rating,
+            'total_completed_requests': prof.total_completed_requests
+        } for prof in top_professionals
+    ])
+
+@app.route('/admin/top-customers', methods=['GET'])
+def get_top_customers():
+    """
+    Retrieve top 5 customers by number of service requests
+    """
+    top_customers = db.session.query(
+        Customer.name,
+        db.func.count(ServiceRequest.id).label('total_requests')
+    ).join(
+        ServiceRequest, Customer.id == ServiceRequest.customer_id
+    ).group_by(
+        Customer.name
+    ).order_by(
+        db.text('total_requests DESC')
+    ).limit(5).all()
+
+    return jsonify([
+        {
+            'name': customer.name,
+            'total_requests': customer.total_requests
+        } for customer in top_customers
+    ])
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/trigger-daily-reminder', methods=['POST'])
+def trigger_daily_reminder():
+    """
+    API to manually trigger the daily reminder job.
+    """
+    task = send_daily_reminders.apply_async()  # Run the Celery task
+    return jsonify({"message": "Reminder job triggered", "task_id": task.id})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route('/professionals/<int:professional_id>/export-service-requests', methods=['POST'])
+def trigger_service_request_export(professional_id):
+    """
+    Trigger async export of service requests for a professional
+    """
+    try:
+        # Trigger Celery task
+        task = export_professional_service_requests.delay(professional_id)
+
+        return jsonify({
+            "message": "Export job triggered successfully",
+            "task_id": task.id
+        }), 202
+    except Exception as e:
+        return jsonify({
+            "error": "Failed to trigger export job",
+            "details": str(e)
+        }), 500
+
+@app.route('/tasks/<task_id>/status', methods=['GET'])
+def get_task_status(task_id):
+    """
+    Check status of an async task
+    """
+    from celery.result import AsyncResult
+
+    task_result = AsyncResult(task_id)
+
+    if task_result.state == 'PENDING':
+        response = {
+            'state': task_result.state,
+            'status': 'Pending...'
+        }
+    elif task_result.state != 'FAILURE':
+        response = {
+            'state': task_result.state,
+            'result': task_result.result,
+        }
+    else:
+        response = {
+            'state': task_result.state,
+            'status': str(task_result.info),
+        }
+
+    return jsonify(response)
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)

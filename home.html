@@ -7,6 +7,8 @@
     <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vue-router@3/dist/vue-router.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <!-- Include Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="admin.js"></script>
@@ -14,6 +16,8 @@
     <script src="professional.js"></script>
     <script src="admin_customer.js"></script>
     <script src="admin_professional.js"></script>
+    <script src="admin_requests.js"></script>
+    <script src="admin_stats.js"></script>
     <script src="customer_booking.js"></script>
     <script src="customer_my_bookings.js"></script>
     <script src="professional_requests.js"></script>
@@ -254,6 +258,7 @@
                   <router-link to="/admin/manage-customers" class="nav-btn">Manage Customers</router-link>
                   <router-link to="/admin/manage-professionals" class="nav-btn">Manage Professionals</router-link>
                   <router-link to="/admin/manage-requests" class="nav-btn">Manage Requests</router-link>
+                  <router-link to="/admin/stats" class="nav-btn">Statistics</router-link>
                 </div>
 
                 <div v-if="isLoggedIn && userRole === 'CUSTOMER'" class="admin-nav-group">
@@ -465,11 +470,13 @@
                 { path: '/admin-dashboard', component: AdminDashboard },
                 { path: '/admin/manage-customers', component: CustomerManagement },
                 { path: '/admin/manage-professionals', component: ProfessionalManagement },
+                { path: '/admin/manage-requests', component: RequestManagement },
                 { path: '/customer/book-a-service', component: BookService },
                 { path: '/customer/my-bookings', component: MyBookings },
                 { path: '/professional/requests', component: ProfessionalRequests },
                 { path: '/professional/assignments', component: ProfessionalAssignments },
-                { path: '/professional/profile', component: ProfessionalProfile }
+                { path: '/professional/profile', component: ProfessionalProfile },
+                { path: '/admin/stats', component: Stats }
             ]
         });
 
@@ -485,6 +492,8 @@ router.beforeEach((to, from, next) => {
         '/admin-dashboard',
         '/admin/manage-customers',
         '/admin/manage-professionals',
+        '/admin/manage-requests',
+        '/admin/stats',
         '/customer/book-a-service',
         '/customer/my-bookings',
         '/professional/requests',
@@ -493,7 +502,7 @@ router.beforeEach((to, from, next) => {
     ];
 
     // Role-specific routes
-    const adminRoutes = ['/admin-dashboard', '/admin/manage-customers', '/admin/manage-professionals', '/admin/manage-requests'];
+    const adminRoutes = ['/admin-dashboard', '/admin/manage-customers', '/admin/manage-professionals', '/admin/manage-requests', '/admin/stats'];
     const customerRoutes = ['/customer-dashboard', '/customer/book-a-service', '/customer/my-bookings'];
     const professionalRoutes = ['/professional/requests', '/professional/assignments', '/professional/profile'];
 

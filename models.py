@@ -35,7 +35,7 @@ class User(db.Model):
 class Customer(db.Model):
     __tablename__ = 'customer'
     id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
-    name = db.Column(db.String(100), nullable=False)  # Added name field
+    name = db.Column(db.String(100), nullable=False)
     location = db.Column(db.String(100), nullable=True)
     pin_code = db.Column(db.String(10), nullable=True)
 
